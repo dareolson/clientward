@@ -173,6 +173,80 @@ This is why applying `team_id` correctly from day one matters even if we start s
 
 ---
 
+## 4. Security Foundations (SOC 2 — Architectural)
+
+These three items belong in the plan from day one because they affect how you write code and design the schema. Getting them wrong is either a migration or a security incident.
+
+### Encryption
+
+**At rest:** Supabase encrypts all data at rest by default at the infrastructure level. That covers you for storage — but you're still responsible for not undermining it. Never store sensitive fields (SSNs, payment details, health data) in plaintext columns. If Clientward ever touches regulated data, field-level encryption on specific columns may be required on top of disk-level encryption.
+
+**In transit:** HTTPS everywhere, enforced at the platform level (Vercel + Supabase handle this). Never allow HTTP fallback. Never pass sensitive data as URL query parameters — they end up in logs.
+
+**In logs:** Never log PII in plaintext. This means audit log `before_state` / `after_state` fields must mask or exclude sensitive fields (passwords, tokens, payment info, SSNs). Build the masking into `logAction()` from the start.
+
+### Secrets Management
+
+API keys, service credentials, database URLs, and tokens must never appear in source code or git history. One committed secret invalidates your SOC 2 audit.
+
+Rules:
+- All secrets live in environment variables (Vercel env vars for production, `.env.local` locally)
+- `.env*` files are in `.gitignore` — verify this before the first commit
+- Use a secrets manager (Doppler, Infisical, or AWS Secrets Manager) as you scale past solo development
+- Rotate any key that is ever accidentally committed — do not just delete the commit, treat the key as compromised
+- Separate keys per environment: dev, staging, production never share credentials
+
+### Data Classification
+
+Before writing schema, decide which fields are sensitive. This drives encryption decisions, log masking rules, export controls, and eventually your data processing agreement with customers.
+
+A simple starting framework:
+
+| Class | Examples | Treatment |
+|---|---|---|
+| Public | Team name, plan tier, created_at | No restrictions |
+| Internal | Usage metrics, feature flags | Internal access only |
+| Confidential | User emails, names, billing address | Masked in logs, access-logged |
+| Restricted | Payment data, SSNs, health records | Field-level encryption, strict audit, may require HIPAA/PCI |
+
+For most early Clientward data (team info, project data, rates, contacts), Confidential is the right classification. Build your logging and export features with that assumption.
+
+---
+
+## 5. SOC 2 — Operational Requirements (Add As You Go)
+
+These are real SOC 2 requirements but they are process and policy based, not architectural. They do not affect how you write code from day one. Add them when you are actively pursuing certification or when an enterprise customer asks for them.
+
+**Access controls:**
+- MFA enforced for all internal admin access (Supabase dashboard, Vercel, GitHub, DNS)
+- Access reviews — quarterly review of who has access to what, revoke anything stale
+- Principle of least privilege — engineers get the minimum access needed, no shared root credentials
+
+**Policies (written documents):**
+- Security policy — how you handle access, incidents, and vulnerabilities
+- Incident response plan — what you do when something goes wrong, who gets notified, how you communicate to customers
+- Change management policy — how code gets reviewed and deployed (PR review, no direct pushes to main)
+- Business continuity / disaster recovery — what happens if Supabase or Vercel goes down
+
+**Vendor management:**
+- Verify that your critical vendors have their own SOC 2: Supabase (yes), Vercel (yes), Resend (check), any others
+- Keep a vendor list — auditors will ask for it
+
+**Vulnerability management:**
+- Dependency scanning (GitHub Dependabot covers this at no cost)
+- Penetration testing before launch to any regulated industry customer
+- Process for patching critical CVEs within a defined window (e.g., 72 hours for critical)
+
+**Monitoring and alerting:**
+- Error monitoring (Sentry or similar) so you know when something breaks before customers do
+- Uptime monitoring with alerting
+- Log retention policy — how long do you keep audit logs? (SOC 2 typically expects 1 year minimum)
+
+**When to actually pursue certification:**
+SOC 2 Type I (point-in-time snapshot) takes ~3 months and costs $10–30k with an auditor. Type II (6-month observation period) is what enterprise buyers actually want. Don't pursue it until you have a prospect who is requiring it — use that deal as the forcing function and cost-justify it against the contract value.
+
+---
+
 ## Summary: What Must Exist Before Writing Feature Code
 
 | Requirement | Must Have Before... |
@@ -182,6 +256,9 @@ This is why applying `team_id` correctly from day one matters even if we start s
 | RLS on all tenant tables | First table with customer data |
 | UUID primary keys everywhere | First table, period |
 | Separate audit schema | Before beta / any real customer data |
+| Secrets in env vars, .env gitignored | First commit |
+| Data classification decision | Schema design |
+| No PII in logs (masking in logAction) | Audit logging implementation |
 
 ---
 
@@ -194,4 +271,4 @@ Rate Guide will eventually serve as the top-of-funnel for Clientward. This means
 
 ---
 
-*Last updated: 2026-04-22*
+*Last updated: 2026-04-22 — added SOC 2 architectural foundations (encryption, secrets, data classification) and operational requirements*
